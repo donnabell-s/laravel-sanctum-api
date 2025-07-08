@@ -1,55 +1,122 @@
 <?php
+
 namespace App\Http\Controllers;
 
+use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use App\Models\User;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Validation\ValidationException;
 
 class AuthController extends Controller
 {
-    public function showLogin() {
-        return view('auth.login');
+
+    public function test(Request $request)
+    {
+        return response()->json([
+            'message' => 'API is working',
+            'data' => $request->all(),
+            'headers' => $request->headers->all()
+        ]);
     }
 
-    public function login(Request $request) {
-        $credentials = $request->only('email', 'password');
+    public function login(Request $request)
+    {
+        $request->validate([
+            'email' => 'required|email',
+            'password' => 'required',
+        ]);
 
-        if (Auth::attempt($credentials)) {
-            $request->session()->regenerate();
-            return redirect()->intended('products');
+        if (!Auth::attempt($request->only('email', 'password'))) {
+            throw ValidationException::withMessages([
+                'email' => ['The provided credentials are incorrect.'],
+            ]);
         }
 
-        return back()->withErrors([
-            'email' => 'Invalid credentials.',
-        ])->withInput();
-    }
+        /** @var \App\Models\User $user */
+        $user = Auth::user();
+        $token = $user->createToken('api-token')->plainTextToken;
 
-    public function showRegister() {
-        return view('auth.register');
-    }
-
-    public function register(Request $request) {
-        $request->validate([
-            'name' => 'required',
-            'email' => 'required|email|unique:users',
-            'password' => 'required|min:6|confirmed'
+        return response()->json([
+            'user' => $user,
+            'token' => $token,
         ]);
-
-        $user = User::create([
-            'name' => $request->name,
-            'email' => $request->email,
-            'password' => Hash::make($request->password),
-        ]);
-
-        // Auth::login($user);
-        return redirect('/');
     }
 
-    public function logout(Request $request) {
-        Auth::logout();
-        $request->session()->invalidate();
-        $request->session()->regenerateToken();
-        return redirect('/login');
+    // public function register(Request $request)
+    // {
+    //     try {
+    //         $validated = $request->validate([
+    //             'name' => 'required|string|max:255',
+    //             'email' => 'required|string|email|max:255|unique:users',
+    //             'password' => 'required|string|min:8|confirmed',
+    //         ]);
+
+    //         $user = User::create([
+    //             'name' => $validated['name'],
+    //             'email' => $validated['email'],
+    //             'password' => Hash::make($validated['password']),
+    //         ]);
+
+    //         $token = $user->createToken('api-token')->plainTextToken;
+
+    //         return response()->json([
+    //             'user' => $user,
+    //             'token' => $token,
+    //         ], 201);
+
+    //     } catch (ValidationException $e) {
+    //         return response()->json([
+    //             'message' => 'Validation failed',
+    //             'errors' => $e->errors()
+    //         ], 422);
+    //     } catch (\Exception $e) {
+    //         return response()->json([
+    //             'message' => 'Registration failed',
+    //             'error' => $e->getMessage()
+    //         ], 500);
+    //     }
+    // }
+
+    public function register(Request $request)
+    {
+        try {
+            $validated = $request->validate([
+                'name' => 'required|string|max:255',
+                'email' => 'required|string|email|max:255|unique:users',
+                'password' => 'required|string|min:8|confirmed',
+            ]);
+
+            $user = User::create([
+                'name' => $validated['name'],
+                'email' => $validated['email'],
+                'password' => Hash::make($validated['password']),
+            ]);
+
+            return response()->json([
+                'message' => 'User registered successfully',
+                'user' => $user,
+            ], 201);
+
+        } catch (ValidationException $e) {
+            return response()->json([
+                'message' => 'Validation failed',
+                'errors' => $e->errors()
+            ], 422);
+        } catch (\Exception $e) {
+            return response()->json([
+                'message' => 'Registration failed',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+
+    public function logout(Request $request)
+    {
+        $request->user()->currentAccessToken()->delete();
+
+        return response()->json(['message' => 'Logged out successfully']);
     }
 }
